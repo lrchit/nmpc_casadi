@@ -5,4 +5,3 @@ We use single shooting and multiple shooting respectively to solve nonlinear mpc
 
 In our example, the result is that multiple shooting is approximately 10 time faster than single shooting.
 # nmpc_casadi
-# nmpc_casadi
