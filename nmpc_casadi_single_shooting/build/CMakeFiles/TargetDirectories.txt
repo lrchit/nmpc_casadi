@@ -1,3 +1,0 @@
-/home/lrc/nmpc_casadi/nmpc_casadi_single_shooting/build/CMakeFiles/nmpc_caller.dir
-/home/lrc/nmpc_casadi/nmpc_casadi_single_shooting/build/CMakeFiles/edit_cache.dir
-/home/lrc/nmpc_casadi/nmpc_casadi_single_shooting/build/CMakeFiles/rebuild_cache.dir

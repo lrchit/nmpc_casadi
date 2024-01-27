@@ -165,7 +165,6 @@ void nmpc_caller::set_nmpc_solver() {
   nlp_opts["ipopt.fixed_variable_treatment"] = "relax_bounds";
 
   solver = nlpsol("nlpsol", solver_name, nlp_prob, nlp_opts);
-  std::cout << "11111111111111111" << std::endl;
 }
 
 SX nmpc_caller::motion_function(SX state_vars, SX control_vars, SX p_feet) {
@@ -228,7 +227,6 @@ void nmpc_caller::opti_solution(Eigen::Matrix<float, 12, 1> current_states,
       ubg.push_back(200 * desired_gait(i, leg));
     }
   }
-  std::cout << "11111111111111111" << lbg.size() << std::endl;
 
   // Original parameter values
   // 前12*horizon个为参考输入
