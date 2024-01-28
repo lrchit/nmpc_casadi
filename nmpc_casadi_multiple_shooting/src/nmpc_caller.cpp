@@ -86,10 +86,17 @@ nmpc_caller::~nmpc_caller() {}
 void nmpc_caller::set_nmpc_solver() {
 
   // Variables，状态和控制输入为变量
-  SX x = SX::sym("x", 24 * horizon);
+  SX u = SX::sym("u", 12 * horizon);
+  SX x = SX::sym("x", 12 * horizon);
+  SX X = SX::vertcat({u, x});
 
   // Parameters，含有参考控制输入，当前轨迹，参考轨迹，足端位置
-  SX p = SX::sym("p", 12 * horizon + 12 * (horizon + 1) + 12);
+  SX u_ref = SX::sym("u_ref", 12);
+  SX x_cur = SX::sym("x_cur", 12);
+  SX x_ref = SX::sym("x_ref", 12 * horizon);
+  SX p_foot = SX::sym("p_foot", 12);
+  SX p = SX::vertcat({u_ref, x_cur, x_ref, p_foot});
+
   f_num = 12 * horizon;
 
   // 代价函数
@@ -97,62 +104,58 @@ void nmpc_caller::set_nmpc_solver() {
   f = 0;
   // 1. 状态损失，末端损失权重更大
   for (int k = 0; k < horizon - 1; k++) {
-    SX states_err = x(Slice(f_num + 12 * k, f_num + 12 * k + 12)) -
-                    p(Slice(f_num + 12 * (k + 1), f_num + 12 * (k + 1) + 12));
+    SX states_err =
+        x(Slice(12 * k, 12 * k + 12)) - x_ref(Slice(12 * k, 12 * (k + 1)));
     f = f + SX::mtimes({states_err.T(), weightQ, states_err});
   }
-  SX states_err =
-      x(Slice(f_num + 12 * (horizon - 1), f_num + 12 * (horizon - 1) + 12)) -
-      p(Slice(f_num + 12 * horizon, f_num + 12 * horizon + 12));
+  SX states_err = x(Slice(12 * (horizon - 1), 12 * (horizon - 1) + 12)) -
+                  x_ref(Slice(12 * (horizon - 1), 12 * horizon));
   f = f + SX::mtimes({states_err.T(), weightQ_t, states_err});
 
   // 2. 控制输入的正则化
   for (int k = 0; k < horizon; k++) {
-    SX controls_val = x(Slice(12 * k, 12 * k + 12));
+    SX controls_val = u(Slice(12 * k, 12 * k + 12));
     f = f + SX::mtimes({controls_val.T(), weightR, controls_val});
   }
 
   // 3. 控制输入的变化量
-  SX delta_controls_val = x(Slice(0, 12)) - p(Slice(0, 12));
+  SX delta_controls_val = u(Slice(0, 12)) - u_ref;
   f = f + SX::mtimes({delta_controls_val.T(), weightS, delta_controls_val});
   for (int k = 1; k < horizon - 1; k++) {
-    SX delta_controls_val = x(Slice(12 * (k + 1), 12 * (k + 1) + 12)) -
-                            x(Slice(12 * k, 12 * k + 12));
+    SX delta_controls_val = u(Slice(12 * (k + 1), 12 * (k + 1) + 12)) -
+                            u(Slice(12 * k, 12 * k + 12));
     f = f + SX::mtimes({delta_controls_val.T(), weightS, delta_controls_val});
   }
 
   // 1. 状态空间约束，应该用龙格库塔法离散化
   // 1.1 当前状态与优化的状态起始点满足约束
   SX constraints = SX::vertcat(
-      {x(Slice(f_num, f_num + 12)) -
-       Eular_method(p(Slice(f_num, f_num + 12)), x(Slice(0, 12)),
-                    p(Slice(24 * horizon + 12, 24 * horizon + 24)))});
+      {x(Slice(0, 12)) - Eular_method(x_cur, u(Slice(0, 12)), p_foot)});
 
   // 1.2 中间所有步的优化状态满足约束
   for (int k = 0; k < horizon - 1; k++) {
     // cout << constraints.size() << endl;
     constraints = SX::vertcat(
         {constraints,
-         x(Slice(f_num + 12 * (k + 1), f_num + 12 * (k + 1) + 12)) -
-             Eular_method(x(Slice(f_num + 12 * k, f_num + 12 * k + 12)),
-                          x(Slice(12 * (k + 1), 12 * (k + 1) + 12)),
-                          p(Slice(24 * horizon + 12, 24 * horizon + 24)))});
+         x(Slice(12 * (k + 1), 12 * (k + 1) + 12)) -
+             Eular_method(x(Slice(12 * k, 12 * k + 12)),
+                          u(Slice(12 * (k + 1), 12 * (k + 1) + 12)), p_foot)});
   }
 
   // 2. 摩擦金字塔约束
   for (int k = 0; k < horizon; k++) {
     for (int leg = 0; leg < 4; leg++) {
       constraints = SX::vertcat(
-          {constraints, x(12 * k + 0 + leg * 3) - mu * x(12 * k + 2 + leg * 3),
-           x(12 * k + 1 + leg * 3) - mu * x(12 * k + 2 + leg * 3),
-           x(12 * k + 0 + leg * 3) + mu * x(12 * k + 2 + leg * 3),
-           x(12 * k + 1 + leg * 3) + mu * x(12 * k + 2 + leg * 3),
-           x(12 * k + 2 + leg * 3)});
+          {constraints, u(12 * k + 0 + leg * 3) - mu * u(12 * k + 2 + leg * 3),
+           u(12 * k + 1 + leg * 3) - mu * u(12 * k + 2 + leg * 3),
+           u(12 * k + 0 + leg * 3) + mu * u(12 * k + 2 + leg * 3),
+           u(12 * k + 1 + leg * 3) + mu * u(12 * k + 2 + leg * 3),
+           u(12 * k + 2 + leg * 3)});
     }
   }
 
   //构建求解器
-  SXDict nlp_prob = {{"x", x}, {"p", p}, {"f", f}, {"g", constraints}};
+  SXDict nlp_prob = {{"x", X}, {"p", p}, {"f", f}, {"g", constraints}};
 
   string solver_name = "ipopt";
   Dict nlp_opts;
@@ -264,11 +267,10 @@ void nmpc_caller::opti_solution(Eigen::Matrix<float, 12, 1> current_states,
   // 第（12*horizon+12+1）～（12*horizon+12+12*horizon）个为参考状态
   // 最后12个为足端与地面接触点
   vector<double> p0;
-  for (int i = 0; i < horizon; i++) {
-    for (int j = 0; j < 12; j++) {
-      p0.push_back(desired_controls[j]);
-    }
+  for (int j = 0; j < 12; j++) {
+    p0.push_back(desired_controls[j]);
   }
+
   for (int j = 0; j < 12; j++) {
     p0.push_back(current_states[j]);
   }
